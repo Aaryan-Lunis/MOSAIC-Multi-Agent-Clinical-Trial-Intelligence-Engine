@@ -1,0 +1,106 @@
+# ClinicalAgent
+
+## Basic Information
+
+- **Title**: ClinicalAgent: Clinical Trial Multi-Agent System with Large Language Model-based Reasoning
+- **Authors**: Ling Yue, Sixue Xing, Jintai Chen, Tianfan Fu
+- **Year**: 2024
+- **Venue**: 15th ACM International Conference on Bioinformatics, Computational Biology and Health Informatics (BCB '24), Shenzhen, China
+- **DOI**: 10.1145/3698587.3701359
+- **Official DOI Link**: https://doi.org/10.1145/3698587.3701359
+- **Official Publisher Link**: https://doi.org/10.1145/3698587.3701359 (ACM Digital Library)
+- **GitHub Repository**: https://github.com/LeoYML/clinical-agent
+- **Dataset(s) Used**:
+  - ClinicalTrials.gov: Yes — completed and ongoing clinical trial data used to validate/train predictive models
+  - AACT: Not reported
+  - PubMed: Not reported
+  - PubMed eUtils: Not reported
+  - Other: DrugBank (drug information database), Hetionet Knowledge Graph (biomedical entity/relationship graph), LLM-generated synthetic data, and a clinical trial outcome prediction benchmark (40 train / 40 test samples, drawn from prior work by Fu et al.)
+
+## Research Category
+
+Multi-Agent Architecture; Core Clinical Trial Intelligence (clinical trial outcome prediction)
+
+## Research Problem
+
+LLMs and multi-agent systems show strong general capabilities but face challenges in clinical trial applications, primarily due to limited access to and integration of external knowledge sources (e.g., drug databases). Existing LLM healthcare tools are largely conversational and lack actionable, explainable outputs for concrete clinical trial tasks such as outcome prediction.
+
+## Motivation
+
+Prior LLM-in-medicine work (ChatGPT, BioGPT, ChatDoctor, Med-PaLM) focuses on conversational Q&A and diagnostic support but does not integrate specialized external databases or produce actionable analysis for clinical trial planning. TrialBench-style work highlights several trial-related prediction problems (duration, dropout, adverse events, mortality, approval outcome, failure reasons, dosing, eligibility design) that are ripe for AI solutions but under-addressed by LLM reasoning approaches specifically.
+
+## Objective
+
+Design ClinicalAgent, a multi-agent LLM system (built on GPT-4) that decomposes clinical trial outcome prediction into specialized subproblems (enrollment feasibility, drug safety, drug efficacy), solves each with dedicated agents backed by external tools/knowledge, and aggregates them via structured reasoning into a final, explainable success/failure prediction.
+
+## Proposed Method
+
+ClinicalAgent is a conversational multi-agent framework, with each agent powered by GPT-4 and enhanced by ReAct and LEAST-TO-MOST reasoning:
+
+- **Planning Agent**: Uses LEAST-TO-MOST reasoning (with few-shot examples) to decompose a user's clinical trial query into subproblems: enrollment feasibility, drug safety, and drug efficacy.
+- **Efficacy Agent**: Uses SMILES notation and queries DrugBank + the Hetionet Knowledge Graph to profile the drug/disease, map interaction pathways (target proteins, genetic associations), and assess efficacy (target specificity, therapeutic indices, trial evidence).
+- **Safety Agent**: Queries DrugBank and clinical trial registries for historical safety profiling, historical failure-rate analysis, and statistical risk assessment for the drug-disease pair.
+- **Enrollment Agent**: Uses a hierarchical transformer model (BioBERT embeddings of eligibility criteria/drugs/diseases → transformer encoder → fully connected layer → sigmoid) to predict a binary enrollment-success probability.
+- **Reasoning Agent**: Aggregates all subproblem outputs using ReAct (Recognition, Action, Context) reasoning, few-shot examples, and synthesizes a final success/failure conclusion with justification.
+- **External tool calling**: Agents call structured (JSON-defined) functions such as `retrieval_drugbank` and `retrieval_hetionet` to fetch external knowledge on demand; simple precomputed lookup dictionaries (historical success-rate averages) back the Drug Risk Model and Disease Risk Model, with approximate string matching for name variants.
+- **Workflow**: (1) Planning/decomposition → (2) task allocation to specialist agents → (3) independent agent processing (calling external tools) → (4) synthesis of findings by the Planning Agent → (5) ReAct-based reasoning/final decision by the Reasoning Agent → (6) delivery of an explained solution to the user.
+
+## Datasets Used
+
+- DrugBank: over 13,000 drug entries (FDA-approved small molecules, biopharmaceuticals, nutraceuticals), used for drug-target interaction and pharmacological data.
+- Hetionet: an integrative biomedical knowledge graph with 47,000+ nodes (diseases, genes, compounds, etc.) and 2,000,000+ relationships.
+- ClinicalTrials.gov: completed and ongoing trial data used to train/validate predictive components.
+- LLM-generated data: synthetic hypothetical drug interactions, therapeutic targets, and model-organism analyses generated by GPT-4 and validated against existing databases.
+- Clinical trial outcome prediction benchmark: 40 training and 40 test samples randomly selected from a benchmark introduced in prior work (Fu et al., HINT/related patents), chosen small due to OpenAI API cost.
+
+## Models / Technologies
+
+- GPT-4 (primary agent backbone), GPT-3.5 (ablation comparison)
+- BioBERT (sentence embeddings for eligibility-criteria text in the Enrollment Model)
+- ReAct reasoning, LEAST-TO-MOST prompting/reasoning
+- Function calling / JSON tool-definition schema for external tool integration
+- LightGBM (Gradient-Boosted Decision Trees, GBDT baseline)
+- Hierarchical Attention Transformer (HAtten baseline, with BioBERT embeddings + hierarchical attention + 2-layer MLP)
+- Standard prompting (plain GPT-4/GPT-3.5, no agent framework) as a control baseline
+
+## Experimental Setup
+
+- Hardware: server with AMD Ryzen 9 3950X CPU, 64GB RAM, NVIDIA RTX 3080 Ti GPU.
+- Software: Python 3.8, PyTorch; fixed random seed for reproducibility.
+- 40 randomly selected training samples and 40 test samples from the clinical trial outcome prediction benchmark, due to the high cost of repeated OpenAI API calls.
+- Metrics: Accuracy, ROC-AUC, PR-AUC, Precision, Recall, F1 — reported as mean ± standard deviation over five independent runs.
+- Ablations: (1) GPT-3.5 vs. GPT-4 as the standard-prompting backbone; (2) with vs. without few-shot learning in ClinicalAgent; (3) with vs. without Hetionet or DrugBank data sources (masking each in turn).
+- Enrollment model specifically: evaluated on historical trial data with a class-imbalance-adjusted cross-entropy loss, achieving ROC-AUC 0.7037 and accuracy 0.7689 on its own held-out test set.
+
+## Results
+
+- ClinicalAgent achieves the highest ROC-AUC (0.834 ± 0.068) among all compared methods and a PR-AUC of 0.791 ± 0.079 — a 0.3326 absolute improvement in PR-AUC over standard GPT-4 prompting (PR-AUC 0.454 ± 0.111).
+- Compared to traditional ML baselines, ClinicalAgent is competitive but does not surpass them on PR-AUC specifically: GBDT PR-AUC 0.866 ± 0.031, HAtten PR-AUC 0.871 ± 0.002, vs. ClinicalAgent 0.791 ± 0.079.
+- GPT-4-based standard prompting outperforms GPT-3.5-based standard prompting on most metrics (e.g., ROC-AUC 0.604 vs. 0.591).
+- Few-shot learning improves ROC-AUC (0.8347 vs. 0.824) and PR-AUC (0.7908 vs. 0.6793) versus a no-few-shot variant, though accuracy and F1 are marginally lower with few-shot.
+- Ablations removing external data sources show DrugBank is critical: removing it drops PR-AUC to 0.455 ± 0.106 (near-random), while removing Hetionet causes a more moderate drop to 0.640 ± 0.114.
+- Case study (NCT00311402, Aggrenox for cerebrovascular accident): the system correctly predicted a low success probability (0.0, matching the ground truth of 0) by combining a moderate enrollment-difficulty estimate, a 100% historical failure rate for the drug, and mechanism-based efficacy reasoning.
+
+## Strengths
+
+- First multi-agent LLM framework specifically built for clinical trial reasoning tasks, combining conversational ability with actionable, tool-augmented intelligence.
+- Modular agent design cleanly separates enrollment, safety, and efficacy reasoning, each grounded in a distinct external knowledge source.
+- Produces explainable, step-by-step reasoning chains for its final predictions (illustrated via the worked case study).
+- External tools (DrugBank, Hetionet, predictive models) are pluggable via a structured function-calling interface, allowing extension with additional ML models.
+
+## Limitations
+
+- Evaluation sample size is very small (40 train / 40 test) due to OpenAI API cost constraints, limiting statistical confidence.
+- Still lags behind traditional ML baselines (GBDT, HAtten) on PR-AUC despite outperforming plain LLM prompting.
+- Requires substantial human intervention for agent design and configuration, limiting scalability/adaptability as requirements evolve.
+- The Drug Risk and Disease Risk models are simple precomputed historical-average lookups with approximate string matching, not learned models over rich features.
+
+## How MOSAIC Can Reuse This Paper
+
+- **Which MOSAIC module benefits**: The multi-agent orchestration layer — this paper is a direct template for decomposing a complex clinical trial query into specialist sub-agents and aggregating their outputs, which maps naturally onto MOSAIC's planned multi-agent architecture (e.g., eligibility, retrieval, and reasoning agents).
+- **What to implement**: The Planning Agent → specialist agents (Enrollment/Safety/Efficacy-style) → Reasoning Agent pattern, using LEAST-TO-MOST decomposition plus ReAct-based synthesis; the structured JSON function-calling interface for connecting agents to external knowledge bases/knowledge graphs and predictive models; the pattern of validating each external-data-source's contribution via masked ablations.
+- **What should NOT be copied**: Sole reliance on GPT-4 at high per-call API cost for every agent step; the simplistic precomputed lookup-table risk models (Drug Risk Model, Disease Risk Model) — these should be replaced with properly trained models over larger data in MOSAIC; the very small (40/40) evaluation scale.
+- **Possible improvements**: Integrate a ClinicalTrials.gov/PubMed retrieval agent (as in TrialGPT/TrialMind) alongside the DrugBank/Hetionet-based agents to broaden the knowledge scope; replace lookup-table risk models with learned predictive models trained on larger historical trial datasets; scale up the evaluation set size and consider cheaper/open-source backbones for cost-effective agent calls.
+
+## Personal Notes
+
