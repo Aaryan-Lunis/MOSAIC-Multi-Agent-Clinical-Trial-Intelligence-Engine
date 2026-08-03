@@ -524,4 +524,4 @@ class DocumentParser:
             f"total={len(raw_papers)}"
         )
 
-        return parsed
+        return parsed 
