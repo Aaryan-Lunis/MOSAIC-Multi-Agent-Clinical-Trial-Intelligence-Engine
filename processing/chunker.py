@@ -57,29 +57,40 @@ from dataclasses import dataclass
 # we just decorate the class with @dataclass and Python
 # handles all the boilerplate automatically.
 # Think of it as a shortcut for creating simple data containers.
+
 from typing import Any
-from ingestion.document_parser import ParsedPaper, ParsedStudy
+from ingestion.document_parser import ParsedStudy, ParsedPaper
 # We import our clean data models from document_parser.py.
 # The chunker only ever works with CLEAN data — it never
 # touches raw API responses directly.
+
 from config.logging_config import setup_logging
 
 logger = setup_logging(__name__)
 # __name__ here = "processing.chunker"
 
-#configurations
+
+# ─────────────────────────────────────────────────────────────
+# CONFIGURATION — THE CHUNKING RULES
+#
+# These two numbers control how chunking works.
+# They are defined at the top so they are easy to find and tune.
+# ─────────────────────────────────────────────────────────────
+
 CHUNK_SIZE = 500
 # Maximum number of WORDS per chunk.
 # We measure in words (not characters or tokens) because words
 # are easier to reason about — "this chunk is about 500 words"
 # is intuitive. Characters and tokens are less human-friendly.
 # 500 words ≈ one or two paragraphs — a focused, coherent piece.
-OVERLAP_SIZE = 50 
+
+OVERLAP_SIZE = 50
 # How many words to REPEAT between consecutive chunks.
 # The last 50 words of chunk 1 become the first 50 words of chunk 2.
 # This ensures no important sentence gets split across a boundary.
 # 50 words is roughly 2-3 sentences — enough context to preserve
 # meaning at the edges without wasting too much space on repetition.
+
 
 # ─────────────────────────────────────────────────────────────
 # THE TextChunk DATACLASS
@@ -89,9 +100,10 @@ OVERLAP_SIZE = 50
 # The embedder.py file receives a list of TextChunks and
 # adds an embedding to each one.
 # ─────────────────────────────────────────────────────────────
+
 @dataclass
 class TextChunk:
-    '''
+    """
     One chunk of text from a study or paper, ready to be embedded.
 
     Think of this as a labelled envelope containing a piece of text.
@@ -110,17 +122,21 @@ class TextChunk:
                      "paper"  = from a PubMed research paper
         word_count:  How many words are in this chunk.
                      Useful for debugging and quality checks.
-    '''
+    """
 
-    chunk_id : str
-    nct_id : str
-    chunk_text : str
-    chunk_index : int
-    source: str
-    word_count: int
+    chunk_id:    str
+    nct_id:      str
+    chunk_text:  str
+    chunk_index: int
+    source:      str
+    word_count:  int
 
 
-class Chunkers:
+# ─────────────────────────────────────────────────────────────
+# THE CHUNKER CLASS
+# ─────────────────────────────────────────────────────────────
+
+class Chunker:
     """
     Splits study and paper documents into overlapping text chunks.
 
@@ -129,9 +145,11 @@ class Chunkers:
         chunks = chunker.chunk_study(parsed_study)
         chunks = chunker.chunk_paper(parsed_paper)
     """
-    # chunk one study
-    def chunk_study(self,parsed_study:ParsedStudy) -> list[TextChunk]:
-        '''
+
+    # ── CHUNK ONE STUDY ───────────────────────────────────────
+
+    def chunk_study(self, study: ParsedStudy) -> list[TextChunk]:
+        """
         Takes one ParsedStudy and produces a list of TextChunks.
 
         First we BUILD the full text by combining all the study's
@@ -145,46 +163,64 @@ class Chunkers:
 
         Returns:
             A list of TextChunk objects, ready for embedding.
-        '''
+        """
 
-        full_text = self._build_full_study_text(parsed_study)
-        chunks = self._split_into_chunks(text  = full_text, 
-                                         nct_id = parsed_study.nct_id, 
-                                         source="study",)
-        chunks = self._split_into_chunks(text = full_text,
-                                         nct_id = parsed_study.nct_id,
-                                         sources= "study")
+        full_text = self._build_study_text(study)
+        # Step 1: Combine all the study's fields into one labelled
+        # text block. The _build_study_text method handles this.
+
+        chunks = self._split_into_chunks(
+            text=full_text,
+            nct_id=study.nct_id,
+            source="study",
+        )
+        # Step 2: Split that text block into overlapping chunks.
+        # The _split_into_chunks method handles this.
 
         logger.info(
-            f"Chunked study {parsed_study.nct_id} into {len(chunks)} chunks."
+            f"Chunked study | "
+            f"nct_id={study.nct_id} | "
+            f"chunks_produced={len(chunks)}"
         )
+
         return chunks
-    #chunk one paper
-    def chunk_paper(self, parsed_paper:ParsedPaper) -> list[TextChunk]:
+
+    # ── CHUNK ONE PAPER ───────────────────────────────────────
+
+    def chunk_paper(self, paper: ParsedPaper) -> list[TextChunk]:
         """
-            Takes one ParsedPaper and produces a list of TextChunks.
+        Takes one ParsedPaper and produces a list of TextChunks.
 
-            Same two-step process as chunk_study:
-            1. Build the full text from all the paper's fields.
-            2. Split into overlapping chunks.
+        Same two-step process as chunk_study:
+        1. Build the full text from all the paper's fields.
+        2. Split into overlapping chunks.
 
-            Args:
-                paper: A clean ParsedPaper object from document_parser.py
+        Args:
+            paper: A clean ParsedPaper object from document_parser.py
 
-            Returns:
-                A list of TextChunk objects, ready for embedding.
+        Returns:
+            A list of TextChunk objects, ready for embedding.
         """
-        full_text = self._build_full_paper_text(parsed_paper)
-        chunks = self._split_into_chunks(text=full_text,
-                                        nct_id = parsed_paper.pmid,
-                                        source="paper",)
+
+        full_text = self._build_paper_text(paper)
+        chunks    = self._split_into_chunks(
+            text=full_text,
+            nct_id=paper.pmid,
+            # For papers we use pmid as the identifier.
+            # nct_id is a slightly misleading field name here —
+            # it just means "the ID of the source document".
+            source="paper",
+        )
 
         logger.info(
-            f"Chunked paper {parsed_paper.pmid} into {len(chunks)} chunks."
+            f"Chunked paper | "
+            f"pmid={paper.pmid} | "
+            f"chunks_produced={len(chunks)}"
         )
+
         return chunks
 
-    #chunk many research studies at once
+    # ── CHUNK MANY STUDIES AT ONCE ────────────────────────────
 
     def chunk_studies(self, studies: list[ParsedStudy]) -> list[TextChunk]:
         """
@@ -197,6 +233,7 @@ class Chunkers:
         Returns:
             Flat list of all TextChunks from all studies combined.
         """
+
         all_chunks: list[TextChunk] = []
 
         for study in studies:
@@ -227,7 +264,9 @@ class Chunkers:
         Returns:
             Flat list of all TextChunks from all papers combined.
         """
+
         all_chunks: list[TextChunk] = []
+
         for paper in papers:
             chunks = self.chunk_paper(paper)
             all_chunks.extend(chunks)
@@ -237,9 +276,11 @@ class Chunkers:
             f"papers={len(papers)} | "
             f"total_chunks={len(all_chunks)}"
         )
+
         return all_chunks
 
-    #build study text
+    # ── PRIVATE METHOD: BUILD STUDY TEXT ──────────────────────
+
     def _build_study_text(self, study: ParsedStudy) -> str:
         """
         Combines all a study's fields into one labelled text block.
@@ -262,6 +303,7 @@ class Chunkers:
             One long string containing all the study's key fields,
             each clearly labelled on its own line.
         """
+
         sections = []
         # We build sections as a list first, then join them at the end.
         # This is cleaner than string concatenation with +=
@@ -414,7 +456,7 @@ class Chunkers:
             # it is by far the longest field.
 
         return "\n".join(sections)
-    
+
     # ── PRIVATE METHOD: SPLIT TEXT INTO CHUNKS ────────────────
 
     def _split_into_chunks(
@@ -527,7 +569,3 @@ class Chunkers:
         )
 
         return chunks
-
-        
-
-
